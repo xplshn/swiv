@@ -10,10 +10,11 @@ PROTO_XDG_CLIENT_C = ${PROTO_DIR}/xdg-shell-protocol.c
 PKG_CFLAGS != $(PKG_CONFIG) --cflags wayland-client pixman-1 2>/dev/null || :
 PKG_LIBS != $(PKG_CONFIG) --libs wayland-client pixman-1 2>/dev/null || :
 
-CFLAGS ?= -O2 -g
+CFLAGS ?= -O2
 CFLAGS += -std=c99 -Wall -Wextra -Wpedantic
 CFLAGS += -I.. -I./protocol
 CFLAGS += ${PKG_CFLAGS}
+CPPFLAGS ?= -D_POSIX_C_SOURCE=200809L
 
 LDFLAGS ?=
 LDFLAGS += -Wl,-rpath,'$$ORIGIN/..'
@@ -57,4 +58,4 @@ install: swiv
 
 compile_flags:
 	@rm -f compile_flags.txt
-	@for f in ${CFLAGS} ${LDFLAGS} ${LDLIBS}; do echo $$f >> compile_flags.txt; done
+	@for f in ${CFLAGS} ${CPPFLAGS} ${LDFLAGS} ${LDLIBS} ; do echo $$f >> compile_flags.txt; done

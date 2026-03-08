@@ -1,5 +1,3 @@
-#define _POSIX_C_SOURCE 200809L
-
 #include "image.h"
 
 #include <pixman-1/pixman.h>
