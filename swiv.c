@@ -9,6 +9,8 @@
 
 static void app_cleanup(struct swiv_ctx *ctx);
 static void app_update_size(struct swiv_ctx *ctx);
+static void run(struct swiv_ctx *ctx);
+static bool setup(struct swiv_ctx *ctx);
 
 static void app_cleanup(struct swiv_ctx *ctx)
 {
@@ -84,29 +86,6 @@ void aspect_fit(int in_w, int in_h, int img_w, int img_h, int *out_w, int *out_h
 void app_render(struct swiv_ctx *ctx)
 {
 	uint32_t flags = WLD_FLAG_MAP;
-
-	/* create wld context if not there */
-	if (!ctx->wld_context) {
-		ctx->wld_context = wld_wayland_create_context(ctx->display, WLD_SHM, WLD_NONE);
-		if (!ctx->wld_context) {
-		fprintf(stderr, "swiv: failed to create wld wl context\n");
-			ctx->running = false;
-			return;
-		}
-
-		ctx->format = WLD_FORMAT_ARGB8888;
-		if (!wld_wayland_has_format(ctx->wld_context, ctx->format)) {
-			ctx->format = WLD_FORMAT_XRGB8888;
-			if (!wld_wayland_has_format(ctx->wld_context, ctx->format)) {
-				fprintf(stderr, "swiv: no supported pixel format\n");
-				ctx->running = false;
-				return;
-			}
-		}
-
-		if (ctx->format == WLD_FORMAT_XRGB8888 && ctx->image.has_alpha)
-			image_force_opaque(&ctx->image);
-	}
 
 	app_update_size(ctx);
 
@@ -233,11 +212,79 @@ void app_render(struct swiv_ctx *ctx)
 	wl_display_flush(ctx->display);
 }
 
+static bool setup(struct swiv_ctx *ctx)
+{
+	/* display */
+	ctx->display = wl_display_connect(NULL);
+	if (!ctx->display) {
+		fprintf(stderr, "swiv: failed to connect to wl display\n");
+		return false;
+	}
+
+	/* registry */
+	ctx->registry = wl_display_get_registry(ctx->display);
+	wl_registry_add_listener(ctx->registry, &registry_listener, ctx);
+	wl_display_roundtrip(ctx->display);
+
+	if (!ctx->compositor || !ctx->wm_base) {
+		fprintf(stderr, "swiv: compositor or xdg_wm_base not available\n");
+		return false;
+	}
+
+	ctx->surface = wl_compositor_create_surface(ctx->compositor);
+	if (!ctx->surface) {
+		fprintf(stderr, "swiv: failed to create wl_surface\n");
+		return false;
+	}
+
+	/* xdg surface */
+	ctx->xdg_surface = xdg_wm_base_get_xdg_surface(ctx->wm_base, ctx->surface);
+	xdg_surface_add_listener(ctx->xdg_surface, &xdg_surface_listener, ctx);
+
+	/* xdg toplevel */
+	ctx->xdg_toplevel = xdg_surface_get_toplevel(ctx->xdg_surface);
+	xdg_toplevel_add_listener(ctx->xdg_toplevel, &xdg_toplevel_listener, ctx);
+	xdg_toplevel_set_title(ctx->xdg_toplevel, "swiv");
+
+	/* set initial window geom to image size */
+	xdg_surface_set_window_geometry(ctx->xdg_surface, 0, 0,
+	                                ctx->image.width, ctx->image.height);
+
+	wl_surface_commit(ctx->surface);
+
+	/* wld context */
+	ctx->wld_context = wld_wayland_create_context(ctx->display, WLD_SHM, WLD_NONE);
+	if (!ctx->wld_context) {
+		fprintf(stderr, "swiv: failed to create wld context\n");
+		return false;
+	}
+
+	ctx->format = WLD_FORMAT_ARGB8888;
+	if (!wld_wayland_has_format(ctx->wld_context, ctx->format)) {
+		ctx->format = WLD_FORMAT_XRGB8888;
+		if (!wld_wayland_has_format(ctx->wld_context, ctx->format)) {
+			fprintf(stderr, "swiv: no supported pixel format\n");
+			return false;
+		}
+	}
+
+	if (ctx->format == WLD_FORMAT_XRGB8888 && ctx->image.has_alpha)
+		image_force_opaque(&ctx->image);
+
+	return true;
+}
+
+static void run(struct swiv_ctx *ctx)
+{
+	ctx->running = true;
+	while (ctx->running && wl_display_dispatch(ctx->display) != -1)
+		;
+}
+
 int main(int argc, char **argv)
 {
 	struct swiv_ctx ctx = {0};
 	char err[256];
-
 	swiv = &ctx;
 
 	if (argc != 2) {
@@ -250,49 +297,12 @@ int main(int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 
-	ctx.display = wl_display_connect(NULL);
-	if (!ctx.display) {
-		fprintf(stderr, "swiv: failed to connect to wl display\n");
-		image_free(&ctx.image);
-		return EXIT_FAILURE;
-	}
-
-	/* registry */
-	ctx.registry = wl_display_get_registry(ctx.display);
-	wl_registry_add_listener(ctx.registry, &registry_listener, &ctx);
-	wl_display_roundtrip(ctx.display);
-
-	if (!ctx.compositor || !ctx.wm_base) {
-		fprintf(stderr, "swiv: compositor or xdg_wm_base not available\n");
+	if (!setup(&ctx)) {
 		app_cleanup(&ctx);
 		return EXIT_FAILURE;
 	}
 
-	ctx.surface = wl_compositor_create_surface(ctx.compositor);
-	if (!ctx.surface) {
-		fprintf(stderr, "swiv: failed to create wl_surface\n");
-		app_cleanup(&ctx);
-		return EXIT_FAILURE;
-	}
-
-	/* XDG surface */
-	ctx.xdg_surface = xdg_wm_base_get_xdg_surface(ctx.wm_base, ctx.surface);
-	xdg_surface_add_listener(ctx.xdg_surface, &xdg_surface_listener, &ctx);
-
-	/* XDG toplevel */
-	ctx.xdg_toplevel = xdg_surface_get_toplevel(ctx.xdg_surface);
-	xdg_toplevel_add_listener(ctx.xdg_toplevel, &xdg_toplevel_listener, &ctx);
-	xdg_toplevel_set_title(ctx.xdg_toplevel, "swiv");
-
-	/* set initial window geom to image size */
-	xdg_surface_set_window_geometry(ctx.xdg_surface, 0, 0,
-	                                ctx.image.width, ctx.image.height);
-
-	wl_surface_commit(ctx.surface);
-
-	ctx.running = true;
-	while (ctx.running && wl_display_dispatch(ctx.display) != -1)
-		;
+	run(&ctx);
 
 	app_cleanup(&ctx);
 	return EXIT_SUCCESS;
