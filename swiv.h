@@ -49,6 +49,8 @@ struct swiv_view_state {
 	int pending_height;
 	int window_width;
 	int window_height;
+	double pan_x;
+	double pan_y;
 	double zoom;
 };
 
@@ -61,6 +63,9 @@ struct swiv_input_state {
 	struct xkb_context *xkb_context;
 	struct xkb_keymap *xkb_keymap;
 	struct xkb_state *xkb_state;
+	double pointer_x;
+	double pointer_y;
+	bool pointer_inside;
 };
 
 struct swiv_options {
@@ -82,6 +87,7 @@ extern struct swiv_ctx *swiv;
 
 void handle_action(struct swiv_ctx *ctx, enum swiv_action action);
 void render(struct swiv_ctx *ctx);
+void zoom_at(struct swiv_ctx *ctx, double factor, double anchor_x, double anchor_y);
 void aspect_fit(int in_w, int in_h, int img_w, int img_h, int *out_w, int *out_h);
 
 #endif /* SWIV_H */

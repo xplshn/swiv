@@ -126,6 +126,63 @@ void handle_action(struct swiv_ctx *ctx, enum swiv_action action)
 	}
 }
 
+void zoom_at(struct swiv_ctx *ctx, double factor, double anchor_x, double anchor_y)
+{
+	double fit_scale;
+	double old_scale;
+	double new_scale;
+	double old_draw_w;
+	double old_draw_h;
+	double new_draw_w;
+	double new_draw_h;
+	double old_center_x;
+	double old_center_y;
+	double new_center_x;
+	double new_center_y;
+	double old_offset_x;
+	double old_offset_y;
+	double image_x;
+	double image_y;
+	double new_offset_x;
+	double new_offset_y;
+
+	if (!ctx->runtime.configured || factor <= 0.0)
+		return;
+
+	app_update_size(ctx);
+
+	fit_scale = (double)ctx->view.window_width / (double)ctx->view.image.width;
+	if ((double)ctx->view.window_height / (double)ctx->view.image.height < fit_scale)
+		fit_scale = (double)ctx->view.window_height / (double)ctx->view.image.height;
+
+	/* find img coords of anchor point before zoom */
+	old_scale = fit_scale * ctx->view.zoom;
+	old_draw_w = (double)ctx->view.image.width * old_scale;
+	old_draw_h = (double)ctx->view.image.height * old_scale;
+	old_center_x = ((double)ctx->view.window_width - old_draw_w) * 0.5;
+	old_center_y = ((double)ctx->view.window_height - old_draw_h) * 0.5;
+	old_offset_x = old_center_x + ctx->view.pan_x;
+	old_offset_y = old_center_y + ctx->view.pan_y;
+	image_x = (anchor_x - old_offset_x) / old_scale;
+	image_y = (anchor_y - old_offset_y) / old_scale;
+
+	/* apply zoom */
+	ctx->view.zoom *= factor;
+
+	/* find new pan to keep anchor point stable */
+	new_scale = fit_scale * ctx->view.zoom;
+	new_draw_w = (double)ctx->view.image.width * new_scale;
+	new_draw_h = (double)ctx->view.image.height * new_scale;
+	new_center_x = ((double)ctx->view.window_width - new_draw_w) * 0.5;
+	new_center_y = ((double)ctx->view.window_height - new_draw_h) * 0.5;
+	new_offset_x = anchor_x - image_x * new_scale;
+	new_offset_y = anchor_y - image_y * new_scale;
+	ctx->view.pan_x = new_offset_x - new_center_x;
+	ctx->view.pan_y = new_offset_y - new_center_y;
+
+	render(ctx);
+}
+
 void render(struct swiv_ctx *ctx)
 {
 	uint32_t flags = WLD_FLAG_MAP;
@@ -192,8 +249,8 @@ void render(struct swiv_ctx *ctx)
 	if (draw_h < 1)
 		draw_h = 1;
 
-	int offset_x = (ctx->view.window_width - draw_w) / 2;
-	int offset_y = (ctx->view.window_height - draw_h) / 2;
+	int offset_x = (ctx->view.window_width - draw_w) / 2 + (int)ctx->view.pan_x;
+	int offset_y = (ctx->view.window_height - draw_h) / 2 + (int)ctx->view.pan_y;
 
 	/* create pixman images */
 	pixman_format_code_t dst_format = (ctx->render.format == WLD_FORMAT_ARGB8888)
@@ -331,6 +388,8 @@ static bool setup(struct swiv_ctx *ctx)
 	ctx->options.lock_window_aspect = true;
 	ctx->options.zoom_step = 1.1;
 	ctx->view.zoom = 1;
+	ctx->view.pan_x = 0;
+	ctx->view.pan_y = 0;
 
 	return true;
 }

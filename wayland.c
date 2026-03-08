@@ -277,17 +277,27 @@ static void pointer_axis(void *data, struct wl_pointer *pointer, uint32_t time,
 {
 	struct swiv_ctx *ctx = data;
 	double scroll;
+	double anchor_x;
+	double anchor_y;
 	(void)pointer;
 	(void)time;
 
 	if (axis != WL_POINTER_AXIS_VERTICAL_SCROLL)
 		return;
 
+	if (ctx->input.pointer_inside) {
+		anchor_x = ctx->input.pointer_x;
+		anchor_y = ctx->input.pointer_y;
+	} else {
+		anchor_x = ctx->view.window_width * 0.5;
+		anchor_y = ctx->view.window_height * 0.5;
+	}
+
 	scroll = wl_fixed_to_double(value);
 	if (scroll <= -1.0) /* scroll up */
-		handle_action(ctx, SWIV_ACTION_ZOOM_IN);
+		zoom_at(ctx, ctx->options.zoom_step, anchor_x, anchor_y);
 	else if (scroll >= 1.0) /* scroll down */
-		handle_action(ctx, SWIV_ACTION_ZOOM_OUT);
+		zoom_at(ctx, 1.0 / ctx->options.zoom_step, anchor_x, anchor_y);
 }
 
 static void pointer_axis_discrete(void *data, struct wl_pointer *pointer, uint32_t axis,
@@ -330,12 +340,14 @@ static void pointer_enter(void *data, struct wl_pointer *pointer, uint32_t seria
                           struct wl_surface *surface, wl_fixed_t surface_x,
                           wl_fixed_t surface_y)
 {
-	(void)data;
+	struct swiv_ctx *ctx = data;
 	(void)pointer;
 	(void)serial;
 	(void)surface;
-	(void)surface_x;
-	(void)surface_y;
+
+	ctx->input.pointer_inside = true;
+	ctx->input.pointer_x = wl_fixed_to_double(surface_x);
+	ctx->input.pointer_y = wl_fixed_to_double(surface_y);
 }
 
 static void pointer_frame(void *data, struct wl_pointer *pointer)
@@ -347,20 +359,23 @@ static void pointer_frame(void *data, struct wl_pointer *pointer)
 static void pointer_leave(void *data, struct wl_pointer *pointer, uint32_t serial,
                           struct wl_surface *surface)
 {
-	(void)data;
+	struct swiv_ctx *ctx = data;
 	(void)pointer;
 	(void)serial;
 	(void)surface;
+
+	ctx->input.pointer_inside = false;
 }
 
 static void pointer_motion(void *data, struct wl_pointer *pointer, uint32_t time,
                            wl_fixed_t surface_x, wl_fixed_t surface_y)
 {
-	(void)data;
+	struct swiv_ctx *ctx = data;
 	(void)pointer;
 	(void)time;
-	(void)surface_x;
-	(void)surface_y;
+
+	ctx->input.pointer_x = wl_fixed_to_double(surface_x);
+	ctx->input.pointer_y = wl_fixed_to_double(surface_y);
 }
 
 static void registry_global(void *data, struct wl_registry *registry,
