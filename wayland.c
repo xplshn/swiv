@@ -12,6 +12,10 @@
 struct swiv_ctx *swiv = NULL;
 
 enum {
+	POINTER_BUTTON_LEFT = 0x110, /* BTN_LEFT (used by wl_pointer) */
+};
+
+enum {
 	MOD_SHIFT = 1u << 0,
 	MOD_CTRL = 1u << 1,
 	MOD_ALT = 1u << 2,
@@ -334,12 +338,19 @@ static void pointer_axis_stop(void *data, struct wl_pointer *pointer, uint32_t t
 static void pointer_button(void *data, struct wl_pointer *pointer, uint32_t serial,
                            uint32_t time, uint32_t button, uint32_t state)
 {
-	(void)data;
+	struct swiv_ctx *ctx = data;
 	(void)pointer;
 	(void)serial;
 	(void)time;
-	(void)button;
-	(void)state;
+
+	if (button != POINTER_BUTTON_LEFT)
+		return;
+
+	if (state == WL_POINTER_BUTTON_STATE_PRESSED) {
+		ctx->input.pointer_dragging = true;
+	} else if (state == WL_POINTER_BUTTON_STATE_RELEASED) {
+		ctx->input.pointer_dragging = false;
+	}
 }
 
 static void pointer_enter(void *data, struct wl_pointer *pointer, uint32_t serial,
@@ -371,17 +382,33 @@ static void pointer_leave(void *data, struct wl_pointer *pointer, uint32_t seria
 	(void)surface;
 
 	ctx->input.pointer_inside = false;
+	ctx->input.pointer_dragging = false;
 }
 
 static void pointer_motion(void *data, struct wl_pointer *pointer, uint32_t time,
                            wl_fixed_t surface_x, wl_fixed_t surface_y)
 {
 	struct swiv_ctx *ctx = data;
+	double x;
+	double y;
+	double dx;
+	double dy;
 	(void)pointer;
 	(void)time;
 
-	ctx->input.pointer_x = wl_fixed_to_double(surface_x);
-	ctx->input.pointer_y = wl_fixed_to_double(surface_y);
+	x = wl_fixed_to_double(surface_x);
+	y = wl_fixed_to_double(surface_y);
+	dx = x - ctx->input.pointer_x;
+	dy = y - ctx->input.pointer_y;
+	ctx->input.pointer_x = x;
+	ctx->input.pointer_y = y;
+
+	if (ctx->input.pointer_dragging) {
+		ctx->view.pan_x += dx;
+		ctx->view.pan_y += dy;
+		if (ctx->runtime.configured)
+			render(ctx);
+	}
 }
 
 static void registry_global(void *data, struct wl_registry *registry,

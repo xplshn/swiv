@@ -65,6 +65,7 @@ struct swiv_input_state {
 	struct xkb_state *xkb_state;
 	double pointer_x;
 	double pointer_y;
+	bool pointer_dragging;
 	bool pointer_inside;
 };
 
